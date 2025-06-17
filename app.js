@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'orders':     return loadOrdersTab();
       case 'charging':   return loadChargingTab();
       case 'products':   return loadProductsTab();
+      case 'expenses':   return loadExpensesTab();
       case 'dashboard':  return loadDashboardTab();
     }
   }
@@ -226,35 +227,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function loadChargingList() {
     const el = document.getElementById('charging-list');
-    // You may want to filter only open charging records
-    apiGet({ action: "getOpenCharging" }).then(records => {
-      if (!records || !records.length) {
-        el.innerHTML = `<div style="color:#888;">No open charging records.</div>`;
-        return;
-      }
-      el.innerHTML = records.map(chg => `
-        <div class="charging">
-          <div>
-            <strong>Start %: ${chg.chargeStartPercent}</strong>
-            <span style="color:#444;">Kcal: ${chg.chargingKcal || '-'}</span><br>
-            <span style="font-size:0.98em;color:#888;">${formatDate(chg.date)} ${formatTime(chg.date)}</span>
-          </div>
-          <div>
-            <input type="number" placeholder="End %" style="width:70px;" id="endp-${chg.sn}" min="0" max="100"/>
-            <button class="btn-calc" data-sn="${chg.sn}">&#10003;</button>
-          </div>
-        </div>
-      `).join('');
-      el.querySelectorAll('.btn-calc').forEach(btn => {
-        btn.onclick = () => {
-          const sn = btn.dataset.sn;
-          const endPercent = document.getElementById('endp-' + sn).value;
-          apiPost({ action: "completeCharging", sn, chargeEndPercent: endPercent, calcMethod: "percent" }).then(() => {
-            loadChargingList();
-          });
-        };
-      });
-    });
+    // If you have an endpoint for fetching open charging records, use it
+    // For demonstration, we'll just show a message:
+    el.innerHTML = `<div style="color:#888;">Charging list functionality to be implemented based on backend.</div>`;
+    // You should fetch and display open charging records similar to open orders
   }
 
   // ----- PRODUCTS TAB -----
@@ -291,6 +267,70 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       el.innerHTML = products.map(p =>
         `<div class="product"><span><strong>${p.name}</strong> (Rs ${p.rate})</span></div>`
+      ).join('');
+    });
+  }
+
+  // ----- EXPENSES TAB -----
+  function loadExpensesTab() {
+    tabContent.innerHTML = `<h2>Expenses</h2>
+      <form id="expense-form" style="margin-bottom:15px;">
+        <input type="text" name="expenseDescription" placeholder="Description" required />
+        <select name="expenseCategory" required>
+          <option value="">Category</option>
+          <option value="Food">Food</option>
+          <option value="Supplies">Supplies</option>
+          <option value="Utility">Utility</option>
+          <option value="Other">Other</option>
+        </select>
+        <input type="number" name="amount" placeholder="Amount" required min="0" step="0.01" />
+        <select name="paymentMode" required>
+          <option value="cash">Cash</option>
+          <option value="card">Card</option>
+          <option value="upi">UPI</option>
+        </select>
+        <input type="text" name="remarks" placeholder="Remarks" />
+        <button type="submit" style="background:#007bff;color:#fff;">Add Expense</button>
+      </form>
+      <div id="expense-form-msg"></div>
+      <div class="expenses-list" id="expenses-list"></div>`;
+    document.getElementById('expense-form').onsubmit = function (e) {
+      e.preventDefault();
+      const form = e.target;
+      apiPost({
+        action: "addExpense",
+        expenseDescription: form.expenseDescription.value,
+        expense_category: form.expenseCategory.value,
+        amount: form.amount.value,
+        paymentMode: form.paymentMode.value,
+        remarks: form.remarks.value
+      }).then(() => {
+        document.getElementById('expense-form-msg').innerHTML = `<span style="color:#28a745;">Expense added.</span>`;
+        loadExpensesList();
+        setTimeout(() => document.getElementById('expense-form-msg').innerHTML = '', 1200);
+      });
+    };
+    loadExpensesList();
+  }
+  function loadExpensesList() {
+    const el = document.getElementById('expenses-list');
+    apiGet({ action: "getRecentExpenses" }).then(expenses => {
+      if (!expenses || !expenses.length) {
+        el.innerHTML = `<div style="color:#888;">No expenses recorded.</div>`;
+        return;
+      }
+      el.innerHTML = expenses.map(exp =>
+        `<div class="expense">
+           <span>
+             <strong>${exp.expense_description || exp.expenseDescription}</strong>
+             <span style="color:#888;font-size:.94em;"> (${exp.expense_category || exp.category})</span>
+             <br><span style="color:#bbb;font-size:.92em;">${formatDate(exp.date)}</span>
+           </span>
+           <span>
+             Rs ${exp.total_expenses_amount || exp.amount}
+             <span style="color:#007bff; font-size:.92em;">${exp.payment_mode || exp.paymentMode}</span>
+           </span>
+         </div>`
       ).join('');
     });
   }
