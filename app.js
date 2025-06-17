@@ -21,6 +21,20 @@ function formatTime(d) {
   const date = new Date(d);
   return date.toLocaleTimeString();
 }
+function showModal(html, onClose) {
+  const modalBg = document.createElement("div");
+  modalBg.className = "modal-bg";
+  modalBg.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(modalBg);
+  modalBg.onclick = function(e) {
+    if(e.target === modalBg && onClose) { onClose(); document.body.removeChild(modalBg);}
+  };
+  return modalBg;
+}
+function closeModal() {
+  const modalBg = document.querySelector('.modal-bg');
+  if(modalBg) document.body.removeChild(modalBg);
+}
 function showError(msg, selector = "#tab-content") {
   document.querySelector(selector).innerHTML = `<div class="error">${msg}</div>`;
 }
@@ -98,53 +112,88 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ----- ORDERS TAB -----
   function loadOrdersTab() {
-    tabContent.innerHTML = `<h2>Orders</h2>
-    <div id="order-products"></div>
+    tabContent.innerHTML = `<h2>New Order</h2>
+    <div id="order-panel"></div>
     <div style="margin-top:8px;"><strong>Open Orders</strong></div>
     <div class="open-orders-list" id="open-orders-list"></div>`;
     apiGet({ action: "getProducts" }).then(products => {
-      renderProductButtons(products);
+      renderOrderPanel(products);
     });
     loadOpenOrders();
   }
-  function renderProductButtons(products) {
-    const el = document.getElementById('order-products');
-    el.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:9px;">
-    ${products.map(p => `<button class="product-btn" data-name="${p.name}" data-rate="${p.rate}">${p.name}<br><span style="font-size:.8em;">Rs ${p.rate}</span></button>`).join('')}
-    </div>
-    <div id="order-entry-panel"></div>`;
-    el.querySelectorAll('.product-btn').forEach(btn => {
-      btn.onclick = () => showOrderEntry(btn.dataset.name, btn.dataset.rate);
-    });
-  }
-  function showOrderEntry(name, rate) {
-    const panel = document.getElementById('order-entry-panel');
-    panel.innerHTML = `
-      <form id="order-form" style="margin-top:7px;display:flex;align-items:center;gap:8px;">
-      <input type="hidden" name="name" value="${name}" />
-      <span><strong>${name}</strong></span>
-      <input type="number" name="qty" min="1" value="1" required style="width:65px;" />
-      <span style="color:#888;">x Rs ${rate}</span>
-      <button type="submit" style="background:#5cb85c;color:#fff;">Add</button>
+  // Order Cart State
+  let cart = [];
+  function renderOrderPanel(products) {
+    cart = [];
+    const el = document.getElementById('order-panel');
+    el.innerHTML = `
+      <form id="order-add-item-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <select id="order-product-select" required>
+          <option value="">Select Product</option>
+          ${products.map(p => `<option value="${p.name}" data-rate="${p.rate}">${p.name} (Rs ${p.rate})</option>`).join('')}
+        </select>
+        <input type="number" id="order-qty" min="1" value="1" style="width:60px;" required />
+        <button type="submit" style="background:#5cb85c;color:#fff;">Add</button>
       </form>
+      <div style="margin-top:9px;">
+        <table id="cart-table" style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f3faff;"><th>Item</th><th>Qty</th><th>Rate</th><th>Total</th><th></th></tr>
+          </thead>
+          <tbody id="cart-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:6px;text-align:right;font-size:1.13em;"><strong id="cart-total">Total: Rs 0</strong></div>
+      <button id="order-submit-btn" style="margin-top:12px;background:#007bff;color:#fff;" disabled>Place Order</button>
       <div id="order-form-msg"></div>
     `;
-    panel.querySelector('#order-form').onsubmit = function (e) {
+    updateCartTable();
+    // Add item to cart
+    el.querySelector('#order-add-item-form').onsubmit = function(e) {
       e.preventDefault();
-      const qty = this.qty.value;
-      const total = qty * rate;
-      apiPost({
-        action: "addOrder",
-        items: name,
-        qty,
-        rate,
-        total
-      }).then(() => {
-        panel.innerHTML = `<div style="color:#28a745;">Order added!</div>`;
+      const prodSel = el.querySelector('#order-product-select');
+      const name = prodSel.value;
+      const rate = Number(prodSel.selectedOptions[0]?.getAttribute('data-rate') || 0);
+      const qty = Number(el.querySelector('#order-qty').value);
+      if (!name || !rate || !qty) return;
+      const idx = cart.findIndex(item => item.name === name);
+      if (idx >= 0) {
+        cart[idx].qty += qty;
+        cart[idx].total = cart[idx].qty * cart[idx].rate;
+      } else {
+        cart.push({ name, qty, rate, total: qty * rate });
+      }
+      updateCartTable();
+      this.reset();
+    };
+
+    function updateCartTable() {
+      const tbody = el.querySelector("#cart-body");
+      tbody.innerHTML = cart.map((item, i) =>
+        `<tr>
+          <td>${item.name}</td>
+          <td>${item.qty}</td>
+          <td>Rs ${item.rate}</td>
+          <td>Rs ${item.total}</td>
+          <td><button data-i="${i}" style="color:#f33;background:transparent;border:none;">✕</button></td>
+        </tr>`
+      ).join('');
+      el.querySelector("#cart-total").textContent = "Total: Rs " + cart.reduce((a, b) => a + b.total, 0);
+      el.querySelector("#order-submit-btn").disabled = cart.length === 0;
+      tbody.querySelectorAll('button').forEach(btn => {
+        btn.onclick = () => { cart.splice(btn.dataset.i, 1); updateCartTable(); }
+      });
+    }
+
+    el.querySelector("#order-submit-btn").onclick = () => {
+      if(cart.length === 0) return;
+      el.querySelector("#order-form-msg").textContent = "Placing order...";
+      apiPost({ action: "addOrder", items: JSON.stringify(cart) }).then(() => {
+        cart = [];
+        updateCartTable();
+        el.querySelector("#order-form-msg").innerHTML = `<span style="color:#28a745;">Order placed!</span>`;
         loadOpenOrders();
-        setTimeout(() => panel.innerHTML = '', 1200);
-      }).catch(() => {
-        panel.querySelector('#order-form-msg').textContent = "Error. Try again.";
+        setTimeout(() => el.querySelector("#order-form-msg").innerHTML = '', 1200);
       });
     };
   }
@@ -159,66 +208,71 @@ document.addEventListener('DOMContentLoaded', () => {
       el.innerHTML = orders.map(order => `
         <div class="order">
           <div>
-            <strong>${order.items}</strong> <span style="color:#444;">Qty: ${order.qty || '-'}</span><br>
-            <span style="font-size:0.98em;color:#888;">${formatDate(order.date)} ${formatTime(order.date)}</span>
+            <strong>${order.items.map(i=>`${i.name} x${i.qty}`).join(', ')}</strong>
+            <br><span style="font-size:0.98em;color:#888;">${formatDate(order.date)} ${formatTime(order.date)}</span>
+            <br><span style="color:#007bff;font-weight:600;">Rs ${order.total || order.items.reduce((a,b)=>a+(+b.total||0),0)}</span>
           </div>
           <div>
-            <span style="color:#007bff;font-weight:600;">Rs ${order.total}</span>
-            <button class="btn-green" data-sn="${order.sn}">&#10003;</button>
-            <button class="btn-red" data-sn="${order.sn}">&#10005;</button>
+            <button class="btn-green" data-sn="${order.sn}" title="Close">&#10003;</button>
+            <button class="btn-red" data-sn="${order.sn}" title="Cancel">&#10005;</button>
           </div>
         </div>
       `).join('');
-      // Tick = Close to Restaurant, Cross = Cancel
       el.querySelectorAll('.btn-green').forEach(btn => {
-        btn.onclick = () => closeOrderToRestaurant(btn.dataset.sn);
+        btn.onclick = () => showPaymentModeModal(btn.dataset.sn);
       });
       el.querySelectorAll('.btn-red').forEach(btn => {
-        btn.onclick = () => updateOrderStatus(btn.dataset.sn, "cancelled");
+        btn.onclick = () => {
+          apiPost({ action: "cancelOrder", sn: btn.dataset.sn }).then(() => loadOpenOrders());
+        };
       });
     });
   }
-  function closeOrderToRestaurant(sn) {
-    apiPost({ action: "closeOrderToRestaurant", sn }).then(() => {
-      loadOpenOrders();
-    });
-  }
-  function updateOrderStatus(sn, status) {
-    apiPost({ action: "updateOrderStatus", sn, status }).then(() => {
-      loadOpenOrders();
-    });
+  function showPaymentModeModal(sn) {
+    const modal = showModal(`
+      <form id="paymode-form">
+        <label>Payment Mode:</label>
+        <select name="paymentMode" required>
+          <option value="Cash">Cash</option>
+          <option value="Esewa">Esewa</option>
+          <option value="Fonepay">Fonepay</option>
+        </select>
+        <button type="submit" style="margin-top:10px;background:#28a745;color:#fff;">Confirm Payment</button>
+      </form>
+    `, closeModal);
+    modal.querySelector('#paymode-form').onsubmit = function(e){
+      e.preventDefault();
+      const paymentMode = this.paymentMode.value;
+      apiPost({ action: "closeOrder", sn, paymentMode }).then(() => {
+        closeModal();
+        loadOpenOrders();
+      });
+    };
   }
 
   // ----- CHARGING TAB -----
   function loadChargingTab() {
-    tabContent.innerHTML = `<h2>Charging</h2>
-    <form id="charging-form" style="margin-bottom:14px;">
-      <label><input type="radio" name="calc" value="percent" checked> By %</label>
-      <label><input type="radio" name="calc" value="unit"> By Unit</label><br>
-      <input type="number" name="chargeStartPercent" placeholder="Charge Start %" min="0" max="100" required />
-      <input type="number" name="perPercent" placeholder="Per %" step="0.01" min="0" />
-      <input type="number" name="chargingKcal" placeholder="Kcal" min="0" />
-      <input type="number" name="perUnit" placeholder="Per Unit Rate" step="0.01" min="0" />
-      <select name="paymentMode">
-        <option value="cash">Cash</option>
-        <option value="card">Card</option>
-      </select>
-      <button type="submit" style="background:#007bff;color:#fff;">Start</button>
-    </form>
-    <div id="charging-form-msg"></div>
-    <div class="charging-list" id="charging-list"></div>`;
+    tabContent.innerHTML = `<h2>Charging Orders</h2>
+      <form id="charging-form" style="margin-bottom:14px;">
+        <input type="number" name="chargeStartPercent" placeholder="Charge Start %" min="0" max="100" required style="width:100px;"/>
+        <input type="number" name="perPercent" placeholder="Per %" step="0.01" min="0" style="width:100px;"/>
+        <input type="number" name="chargingKcal" placeholder="Kcal" min="0" style="width:100px;"/>
+        <input type="number" name="perUnit" placeholder="Per Unit Rate" step="0.01" min="0" style="width:120px;"/>
+        <button type="submit" style="background:#007bff;color:#fff;">Charging Started</button>
+      </form>
+      <div id="charging-form-msg"></div>
+      <div class="charging-list" id="charging-list"></div>`;
     document.getElementById('charging-form').onsubmit = function (e) {
       e.preventDefault();
       const form = e.target;
       apiPost({
-        action: "addCharging",
+        action: "startChargingOrder",
         chargeStartPercent: form.chargeStartPercent.value,
         perPercent: form.perPercent.value,
         chargingKcal: form.chargingKcal.value,
-        perUnit: form.perUnit.value,
-        paymentMode: form.paymentMode.value
+        perUnit: form.perUnit.value
       }).then(() => {
-        document.getElementById('charging-form-msg').innerHTML = `<span style="color:#28a745;">Charging started.</span>`;
+        document.getElementById('charging-form-msg').innerHTML = `<span style="color:#28a745;">Charging order started.</span>`;
         loadChargingList();
         setTimeout(() => document.getElementById('charging-form-msg').innerHTML = '', 1200);
       });
@@ -227,10 +281,64 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function loadChargingList() {
     const el = document.getElementById('charging-list');
-    // If you have an endpoint for fetching open charging records, use it
-    // For demonstration, we'll just show a message:
-    el.innerHTML = `<div style="color:#888;">Charging list functionality to be implemented based on backend.</div>`;
-    // You should fetch and display open charging records similar to open orders
+    apiGet({ action: "getOpenChargingOrders" }).then(records => {
+      if (!records || !records.length) {
+        el.innerHTML = `<div style="color:#888;">No open charging orders.</div>`;
+        return;
+      }
+      el.innerHTML = records.map(chg => `
+        <div class="charging">
+          <div>
+            <strong>Start %: ${chg.chargeStartPercent}</strong>
+            <span style="color:#444;">Kcal: ${chg.chargingKcal || '-'}</span><br>
+            <span style="font-size:0.98em;color:#888;">${formatDate(chg.date)} ${formatTime(chg.date)}</span>
+          </div>
+          <div>
+            <input type="number" placeholder="End %" style="width:70px;" id="endp-${chg.sn}" min="0" max="100"/>
+            <button class="btn-calc" data-sn="${chg.sn}">&#10003;</button>
+            <button class="btn-red" data-sn="${chg.sn}" title="Cancel">&#10005;</button>
+          </div>
+        </div>
+      `).join('');
+      el.querySelectorAll('.btn-calc').forEach(btn => {
+        btn.onclick = () => showChargingPaymentModeModal(btn.dataset.sn);
+      });
+      el.querySelectorAll('.btn-red').forEach(btn => {
+        btn.onclick = () => {
+          apiPost({ action: "cancelChargingOrder", sn: btn.dataset.sn }).then(() => loadChargingList());
+        };
+      });
+    });
+  }
+  function showChargingPaymentModeModal(sn) {
+    const modal = showModal(`
+      <form id="chpay-form">
+        <label>Charge End %:</label>
+        <input type="number" name="chargeEndPercent" min="0" max="100" required style="width:100px;">
+        <label>Calculation Method:</label>
+        <select name="calcMethod" required>
+          <option value="percent">By %</option>
+          <option value="unit">By Unit</option>
+        </select>
+        <label>Payment Mode:</label>
+        <select name="paymentMode" required>
+          <option value="Cash">Cash</option>
+          <option value="Esewa">Esewa</option>
+          <option value="Fonepay">Fonepay</option>
+        </select>
+        <button type="submit" style="margin-top:10px;background:#28a745;color:#fff;">Charging Completed</button>
+      </form>
+    `, closeModal);
+    modal.querySelector('#chpay-form').onsubmit = function(e){
+      e.preventDefault();
+      const chargeEndPercent = this.chargeEndPercent.value;
+      const calcMethod = this.calcMethod.value;
+      const paymentMode = this.paymentMode.value;
+      apiPost({ action: "closeChargingOrder", sn, chargeEndPercent, calcMethod, paymentMode }).then(() => {
+        closeModal();
+        loadChargingList();
+      });
+    };
   }
 
   // ----- PRODUCTS TAB -----
@@ -278,16 +386,20 @@ document.addEventListener('DOMContentLoaded', () => {
         <input type="text" name="expenseDescription" placeholder="Description" required />
         <select name="expenseCategory" required>
           <option value="">Category</option>
-          <option value="Food">Food</option>
-          <option value="Supplies">Supplies</option>
-          <option value="Utility">Utility</option>
-          <option value="Other">Other</option>
+          <option>Electricity</option>
+          <option>Rent</option>
+          <option>Restaurant</option>
+          <option>Charging Electricity</option>
+          <option>Salary</option>
+          <option>Travel/Fuel</option>
+          <option>Savings</option>
+          <option>Other</option>
         </select>
         <input type="number" name="amount" placeholder="Amount" required min="0" step="0.01" />
         <select name="paymentMode" required>
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
-          <option value="upi">UPI</option>
+          <option value="Cash">Cash</option>
+          <option value="Esewa">Esewa</option>
+          <option value="Fonepay">Fonepay</option>
         </select>
         <input type="text" name="remarks" placeholder="Remarks" />
         <button type="submit" style="background:#007bff;color:#fff;">Add Expense</button>
@@ -349,6 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div id="datewise-results"></div>
     `;
     // Today's
+    // You can adapt this based on your backend
     apiGet({ action: "getTodaysDashboard" }).then(data => {
       document.getElementById('dashboard-today').innerHTML = `
         <div class="dashboard-card">Restaurant<br>Rs ${data.restaurantTotal || 0}</div>
