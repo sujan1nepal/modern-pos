@@ -1,1 +1,24 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Modern POS App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="login-panel" class="centered">
+    <h2>Login</h2>
+    <form id="login-form">
+      <input type="text" id="username" placeholder="Username" required autocomplete="username" />
+      <input type="password" id="password" placeholder="Password" required autocomplete="current-password" />
+      <button type="submit">Login</button>
+      <div id="login-error" class="error"></div>
+    </form>
+  </div>
+  <div id="app" style="display:none;">
+    <!-- Main app will be rendered here by JS after login -->
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
