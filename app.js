@@ -1,5 +1,5 @@
 // ====== CONFIGURATION ======
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwDMNCKFvXI1N-7TjC6uW4dC-DbYak4J9okHgc-10uR7gagk6ujF0AS0UbNeq1P39XOFw/exec"; // <-- set your Apps Script web app URL
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwLijn27ps5idCrvKGNCBSz9NFbXV1_gQwFTmh-4Xc6B15d6EV-iQwviNH-ELWc1tinaA/exec"; // <-- set your Apps Script web app URL
 
 // ====== UTILS ======
 function apiPost(params) {
